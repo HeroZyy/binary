@@ -1,0 +1,10 @@
+# 桌面环境依赖
+kivy==2.1.0
+opencv-python>=4.5.0
+numpy>=1.19.0
+pillow>=8.0.0
+plyer>=2.0.0
+
+# 注意：Android 打包时，buildozer.spec 中使用 opencv recipe
+# 而不是 opencv-python
+

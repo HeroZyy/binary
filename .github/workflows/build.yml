@@ -1,0 +1,87 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 🔧 Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: 📦 Cache Buildozer
+      uses: actions/cache@v4
+      with:
+        path: |
+          .buildozer
+          ~/.buildozer
+        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          ${{ runner.os }}-buildozer-
+    
+    - name: 🏗️ Build with Buildozer
+      uses: ArtemSBulgakov/buildozer-action@v1
+      id: buildozer
+      with:
+        command: buildozer android debug
+        buildozer_version: stable
+    
+    - name: 📤 Upload APK artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: apk-debug-${{ github.sha }}
+        path: ${{ steps.buildozer.outputs.filename }}
+        retention-days: 30
+    
+    - name: 📊 APK Info
+      run: |
+        echo "✅ APK 打包成功！"
+        echo "📦 文件名: ${{ steps.buildozer.outputs.filename }}"
+        echo "📏 文件大小: $(du -h ${{ steps.buildozer.outputs.filename }} | cut -f1)"
+        echo "🔗 下载链接: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+    
+    - name: 🚀 Create Release (on tag)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ${{ steps.buildozer.outputs.filename }}
+        body: |
+          ## 📱 Auto Binarization Demo v${{ github.ref_name }}
+          
+          ### 📦 下载
+          - APK 文件已附加在下方
+          
+          ### ✨ 功能
+          - ✅ 图像二值化（one_step 算法）
+          - ✅ OpenCV 支持
+          - ✅ 自适应阈值处理
+          - ✅ 阴影消除
+          
+          ### 📊 技术栈
+          - Python 3.11
+          - Kivy 2.1.0
+          - OpenCV 4.5+
+          - NumPy
+          
+          ### 📱 安装
+          1. 下载 APK 文件
+          2. 在 Android 设备上安装
+          3. 允许未知来源
+          4. 授予存储权限
+          
+          ### 🐛 问题反馈
+          如有问题，请在 Issues 中反馈
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
