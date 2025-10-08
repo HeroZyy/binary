@@ -3,83 +3,120 @@ name: Build Android APK
 on:
   push:
     branches: [ main, master, develop ]
-  pull_request:
-    branches: [ main, master, develop ]
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    
+    runs-on: ubuntu-20.04
+
     steps:
     - name: 📥 Checkout code
-      uses: actions/checkout@v4
-    
-    - name: 🔧 Setup Python
-      uses: actions/setup-python@v5
+      uses: actions/checkout@v3
+
+    - name: 🐍 Setup Python
+      uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
-    
-    - name: 📦 Cache Buildozer
-      uses: actions/cache@v4
+        python-version: '3.9'
+
+    - name: 📦 Install system dependencies
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y \
+          git zip unzip openjdk-11-jdk wget \
+          autoconf libtool pkg-config \
+          zlib1g-dev libncurses5-dev \
+          libffi-dev libssl-dev cmake \
+          libltdl-dev ccache
+
+    - name: 📦 Install Buildozer
+      run: |
+        pip install --upgrade pip setuptools wheel
+        pip install buildozer==1.5.0 cython==0.29.36
+
+    - name: 📦 Cache Buildozer global directory
+      uses: actions/cache@v3
       with:
-        path: |
-          .buildozer
-          ~/.buildozer
-        key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
+        path: ~/.buildozer
+        key: buildozer-global-${{ hashFiles('buildozer.spec') }}
         restore-keys: |
-          ${{ runner.os }}-buildozer-
-    
-    - name: 🏗️ Build with Buildozer
-      uses: ArtemSBulgakov/buildozer-action@v1
-      id: buildozer
+          buildozer-global-
+
+    - name: 📦 Cache Buildozer directory
+      uses: actions/cache@v3
       with:
-        command: buildozer android debug
-        buildozer_version: stable
+        path: .buildozer
+        key: buildozer-${{ hashFiles('buildozer.spec') }}
+        restore-keys: |
+          buildozer-
+
+    - name: 🏗️ Build APK
+      run: |
+        yes | buildozer android debug || buildozer android debug
+      env:
+        ANDROID_SDK_ROOT: /opt/android-sdk
+        ANDROID_HOME: /opt/android-sdk
     
-    - name: 📤 Upload APK artifact
-      uses: actions/upload-artifact@v4
+    - name: 📊 Find APK file
+      id: find_apk
+      run: |
+        APK_FILE=$(find bin -name "*.apk" -type f | head -n 1)
+        if [ -z "$APK_FILE" ]; then
+          echo "❌ 错误：未找到 APK 文件"
+          echo "bin 目录内容："
+          ls -la bin/ || echo "bin 目录不存在"
+          exit 1
+        fi
+        echo "apk_path=$APK_FILE" >> $GITHUB_OUTPUT
+        echo "apk_name=$(basename $APK_FILE)" >> $GITHUB_OUTPUT
+        echo "✅ 找到 APK: $APK_FILE"
+        echo "📏 文件大小: $(du -h $APK_FILE | cut -f1)"
+
+    - name: 📤 Upload APK
+      uses: actions/upload-artifact@v3
       with:
-        name: apk-debug-${{ github.sha }}
-        path: ${{ steps.buildozer.outputs.filename }}
+        name: android-apk
+        path: ${{ steps.find_apk.outputs.apk_path }}
         retention-days: 30
-    
+
     - name: 📊 APK Info
       run: |
+        echo "=================================="
         echo "✅ APK 打包成功！"
-        echo "📦 文件名: ${{ steps.buildozer.outputs.filename }}"
-        echo "📏 文件大小: $(du -h ${{ steps.buildozer.outputs.filename }} | cut -f1)"
+        echo "=================================="
+        echo "📦 文件名: ${{ steps.find_apk.outputs.apk_name }}"
+        echo "📏 文件大小: $(du -h ${{ steps.find_apk.outputs.apk_path }} | cut -f1)"
         echo "🔗 下载链接: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        echo "=================================="
     
     - name: 🚀 Create Release (on tag)
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: ${{ steps.buildozer.outputs.filename }}
+        files: ${{ steps.find_apk.outputs.apk_path }}
         body: |
-          ## 📱 Auto Binarization Demo v${{ github.ref_name }}
-          
-          ### 📦 下载
-          - APK 文件已附加在下方
-          
+          ## 📱 Auto Binarization Demo ${{ github.ref_name }}
+
+          ### 📥 下载
+          APK 文件已附加在下方
+
           ### ✨ 功能
           - ✅ 图像二值化（one_step 算法）
           - ✅ OpenCV 支持
           - ✅ 自适应阈值处理
           - ✅ 阴影消除
-          
+
           ### 📊 技术栈
-          - Python 3.11
+          - Python 3.9
           - Kivy 2.1.0
           - OpenCV 4.5+
           - NumPy
-          
+
           ### 📱 安装
           1. 下载 APK 文件
           2. 在 Android 设备上安装
           3. 允许未知来源
           4. 授予存储权限
-          
+
           ### 🐛 问题反馈
           如有问题，请在 Issues 中反馈
       env:
